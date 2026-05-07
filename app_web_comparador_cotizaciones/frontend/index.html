@@ -20,7 +20,7 @@ body{margin:0;background:#eef2f7;font-family:Arial;color:#0f172a}.wrap{max-width
 <div id="raw" class="card hidden"><h2>Tablas crudas leídas</h2><div id="rawArea">Todavía no hay tablas.</div></div>
 </div>
 <script>
-let selectedFiles=[]; const API_URL="http://localhost:8000/api/analyze";
+let selectedFiles=[]; const API_URL="https://comparador-cotizaciones.onrender.com/api/analyze";
 document.getElementById("files").addEventListener("change",e=>{selectedFiles=Array.from(e.target.files||[]);document.getElementById("fileList").innerHTML=selectedFiles.map(f=>`<div class="file"><b>${esc(f.name)}</b><span class="badge info">${(f.size/1024).toFixed(1)} KB</span></div>`).join("")});
 function showTab(id,el){["items","comparisons","summary","raw"].forEach(x=>document.getElementById(x).classList.add("hidden"));document.getElementById(id).classList.remove("hidden");document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));el.classList.add("active")}
 async function analyze(){if(!selectedFiles.length){alert("Seleccioná archivos");return}const fd=new FormData();selectedFiles.forEach(f=>fd.append("files",f));document.getElementById("itemsArea").innerHTML="Analizando...";try{const res=await fetch(API_URL,{method:"POST",body:fd});const data=await res.json();if(!res.ok)throw new Error(data.error||"Error");render(data)}catch(e){document.getElementById("itemsArea").innerHTML=`<span class="badge bad">Error</span> ${esc(e.message)}`}}
