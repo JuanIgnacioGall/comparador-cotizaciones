@@ -3,10 +3,10 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from pathlib import Path
-import io, re
+import io, re, csv
 import pandas as pd
 
-app = FastAPI(title="Comparador Web de Cotizaciones")
+app = FastAPI(title="Comparador Cotizaciones V3 - Validación")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,7 +16,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def parse_number(v):
+def clean(s):
+    if s is None:
+        return ""
+    return re.sub(r"\s+", " ", str(s)).strip()
+
+def norm(s):
+    s = clean(s).lower()
+    for a,b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("²","2")]:
+        s=s.replace(a,b)
+    return s
+
+def parse_num(v):
     if v is None:
         return None
     if isinstance(v, (int, float)):
@@ -24,7 +35,7 @@ def parse_number(v):
     s = str(v).strip()
     if not s or s.lower() == "nan":
         return None
-    s = re.sub(r"[^0-9,.-]", "", s)
+    s = re.sub(r"[^0-9,.\-]", "", s)
     if not s:
         return None
     if "," in s and "." in s:
@@ -33,266 +44,262 @@ def parse_number(v):
         else:
             s = s.replace(",", "")
     elif "," in s:
-        parts = s.split(",")
-        if len(parts[-1]) <= 2:
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
+        s = s.replace(".", "").replace(",", ".")
     else:
-        parts = s.split(".")
-        if len(parts) > 2:
+        if s.count(".") > 1:
             s = s.replace(".", "")
     try:
         return float(s)
-    except:
+    except Exception:
         return None
 
-def clean(x):
-    if x is None:
-        return ""
-    if str(x).lower() == "nan":
-        return ""
-    return str(x).strip()
+def format_group(s):
+    s = clean(s)
+    s = s.replace("MM2","mm²").replace("mm2","mm²").replace("MM²","mm²")
+    s = s.replace(",", ".").replace("X","x")
+    s = re.sub(r"\s+", "", s)
+    return s
 
-def norm(x):
-    return re.sub(r"\s+", " ", str(x or "").lower().strip())
+def detect_formation(text):
+    t = clean(text)
+    # 3x2.5+B6mm² / 2x1mm² / 1x150mm²
+    m = re.search(r"(\d+\s*[xX]\s*\d+(?:[\.,]\d+)?(?:\s*\+\s*B?\d+)?\s*(?:mm2|MM2|mm²|MM²)?)", t)
+    if m:
+        return format_group(m.group(1))
+    return ""
 
-def currency(x):
-    x = str(x or "").upper().strip()
-    if x in ["USD", "U$S", "US$"]:
-        return "USD"
-    if x in ["ARS", "$", "PESOS", "PESO"]:
-        return "ARS"
-    if x in ["EUR", "€"]:
-        return "EUR"
-    return x or "SIN DEFINIR"
+def detect_provider(filename, text):
+    low = text.lower()
+    if "ingeniería boggio" in low or "ingenieria boggio" in low:
+        return "Ingeniería Boggio"
+    if "marlew" in low:
+        return "Marlew"
+    if "ateco cables" in low or "ateco" in low:
+        return "Ateco"
+    return Path(filename).stem
 
-def detect_col(df, keys):
-    cols = list(df.columns)
-    normalized = [norm(c) for c in cols]
-    for k in keys:
-        for i, c in enumerate(normalized):
-            if k in c:
-                return cols[i]
-    return None
+def detect_quote(filename, text):
+    m = re.search(r"N[úu]mero:\s*([A-Z0-9\-]+)", text, re.I)
+    if m: return m.group(1)
+    m = re.search(r"PRESUPUESTO\s+([0-9]+)", text, re.I)
+    if m: return m.group(1)
+    m = re.search(r"Presupuesto:\s*([0-9]+)", text, re.I)
+    if m: return m.group(1)
+    return Path(filename).stem
 
-def looks_header(row):
-    text = " ".join(norm(x) for x in row if clean(x))
-    keys = ["descripcion", "descripción", "detalle", "producto", "material", "cantidad", "precio", "unitario", "subtotal", "iva", "total", "codigo", "código", "cod"]
-    return sum(1 for k in keys if k in text) >= 2
+def read_pdf_pages(data):
+    import pdfplumber
+    pages = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for page in pdf.pages:
+            pages.append(page.extract_text(x_tolerance=1, y_tolerance=3) or "")
+    return pages
 
-def promote_header(raw):
-    raw = raw.dropna(how="all").reset_index(drop=True)
-    if raw.empty:
-        return raw
-    header_idx = None
-    for i in range(min(20, len(raw))):
-        if looks_header(raw.iloc[i].tolist()):
-            header_idx = i
-            break
-    if header_idx is not None:
-        headers = [clean(x) or f"Col_{j+1}" for j, x in enumerate(raw.iloc[header_idx].tolist())]
-        df = raw.iloc[header_idx+1:].copy()
-        df.columns = headers[:len(df.columns)]
-    else:
-        df = raw.copy()
-        df.columns = [f"Col_{j+1}" for j in range(len(df.columns))]
-    df = df.dropna(how="all")
-    return df.reset_index(drop=True)
+def mk_item(filename, proveedor, quote, nro, codigo, codigo_int, marca, desc, formacion, unidad, qty, unit_price, subtotal, iva_pct, parser, notas="", min_compra="", entrega="", venta_fraccionada=""):
+    if subtotal is None:
+        subtotal = (qty or 0) * (unit_price or 0)
+    iva_monto = subtotal * iva_pct / 100
+    total = subtotal + iva_monto
+    group = formacion or codigo or codigo_int
+    return {
+        "id": f"{proveedor}-{quote}-{nro}-{codigo}-{codigo_int}",
+        "archivo": filename,
+        "proveedor": proveedor,
+        "cotizacion": quote,
+        "nro_item": str(nro),
+        "codigo": codigo or "",
+        "codigo_interno": codigo_int or "",
+        "marca": marca or "",
+        "descripcion": clean(desc),
+        "formacion": formacion or "",
+        "grupo_comparable": group or "",
+        "moneda": "USD",
+        "unidad": unidad or "u",
+        "cantidad_pedida": qty or 0,
+        "cantidad_real": qty or 0,
+        "precio_unitario": unit_price or 0,
+        "subtotal_sin_iva": subtotal or 0,
+        "iva_pct": iva_pct,
+        "iva_monto": iva_monto,
+        "total_con_iva": total,
+        "minimo_compra": min_compra,
+        "venta_fraccionada": venta_fraccionada,
+        "entrega": entrega,
+        "notas": notas,
+        "parser": parser,
+        "validado": False
+    }
 
-def read_excel(data):
-    xls = pd.ExcelFile(io.BytesIO(data))
-    out = []
-    for sheet in xls.sheet_names:
-        raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet, header=None, dtype=object)
-        out.append((sheet, promote_header(raw), ""))
-    return out
-
-def read_csv(data):
-    text = None
-    for enc in ["utf-8", "latin-1", "cp1252"]:
-        try:
-            text = data.decode(enc)
-            break
-        except:
-            pass
-    if text is None:
-        text = data.decode("utf-8", errors="ignore")
-    best = None
-    best_cols = 0
-    for sep in [";", ",", "\t", "|"]:
-        try:
-            df = pd.read_csv(io.StringIO(text), sep=sep, dtype=object)
-            if len(df.columns) > best_cols:
-                best = df
-                best_cols = len(df.columns)
-        except:
-            pass
-    if best is None:
-        best = pd.DataFrame({"Texto": [l for l in text.splitlines() if l.strip()]})
-    return [("CSV", best, text)]
-
-def text_rows(text):
-    rows = []
-    money_pat = r"(USD|U\$S|US\$|\$|ARS|EUR|€)?\s*([\d]{1,3}(?:[\.,]\d{3})*(?:[\.,]\d{1,2})|[\d]+(?:[\.,]\d{1,2})?)"
-    for line in [l.strip() for l in text.splitlines() if l.strip()]:
+def parse_boggio(filename, pages):
+    text = "\n".join(pages)
+    quote = detect_quote(filename, text)
+    lines = [clean(x) for x in text.splitlines() if clean(x)]
+    blocks, cur = [], []
+    start = re.compile(r"^\d+\s+\d{3,6}\s+\[[^\]]+\]\s+", re.I)
+    ignore = ["cliente:", "cond. iva", "cuit:", "comercial:", "vencimiento:", "terminos de pago",
+        "referencia de cliente", "doc. no valido", "presupuesto", "ingenieria boggio",
+        "remedios de escalada", "www.", "numero:", "fecha:", "iibb:", "pagina:",
+        "subtotal usd", "total usd", "su pedido incluye", "fecha de entrega",
+        "los precios", "las garantias", "confirmar stock", "ud. fue atendido"]
+    for line in lines:
         low = norm(line)
-        if len(line) < 8 or any(x in low for x in ["subtotal", "total general", "cuit", "fecha", "telefono"]):
-            continue
-        matches = list(re.finditer(money_pat, line, flags=re.I))
-        nums = []
-        for m in matches:
-            n = parse_number(m.group(2))
-            if n is not None:
-                nums.append((m.group(1) or "", n, m.group(0)))
-        if not nums:
-            continue
-        mon, price, raw_price = nums[-1]
-        qty = 1
-        q = re.search(r"(cant\.?|cantidad|qty)\s*[:\-]?\s*(\d+[\.,]?\d*)", line, flags=re.I)
-        if q:
-            qty = parse_number(q.group(2)) or 1
-        else:
-            q = re.match(r"^\s*(\d+[\.,]?\d*)\s+", line)
-            if q:
-                possible = parse_number(q.group(1))
-                if possible and possible < 100000:
-                    qty = possible
-        desc = line.replace(raw_price, "")
-        desc = re.sub(r"(cant\.?|cantidad|qty)\s*[:\-]?\s*\d+[\.,]?\d*", "", desc, flags=re.I)
-        desc = re.sub(r"^\s*\d+[\.,]?\d*\s+", "", desc).strip(" -|:")
-        if len(desc) < 3:
-            continue
-        rows.append({"Descripcion": desc, "Cantidad": qty, "Precio Unitario": price, "Moneda": currency(mon)})
-    return rows
+        if any(x in low for x in ignore): continue
+        if start.match(line):
+            if cur: blocks.append(" ".join(cur))
+            cur = [line]
+        elif cur:
+            cur.append(line)
+    if cur: blocks.append(" ".join(cur))
 
-def read_pdf(data):
-    out = []
-    all_text = ""
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            for pageno, page in enumerate(pdf.pages, 1):
-                text = page.extract_text() or ""
-                all_text += "\n" + text
-                tables = page.extract_tables() or []
-                for tidx, table in enumerate(tables, 1):
-                    if table and len(table) >= 2:
-                        df = promote_header(pd.DataFrame(table))
-                        out.append((f"PDF_P{pageno}_T{tidx}", df, text))
-    except Exception as e:
-        out.append(("ERROR_PDF", pd.DataFrame({"Error": [str(e)]}), str(e)))
-    if not out:
-        rows = text_rows(all_text)
-        if rows:
-            out.append(("PDF_TEXTO", pd.DataFrame(rows), all_text))
-        else:
-            out.append(("PDF_SIN_TABLA", pd.DataFrame({"Observacion": ["No se detectó tabla utilizable. Puede ser PDF escaneado."]}), all_text))
-    return out
+    items=[]
+    brands=["INDECA","WENTINCK","FONSECA","IMSA","PRYSMIAN"]
+    brand_re=r"\b("+"|".join(brands)+r")\b"
+    entrega = "15/05/2026" if "Fecha de Entrega: 15/05/2026" in text else "Consultar"
+    for b in blocks:
+        cm = re.match(r"^(\d+)\s+(\d{3,6})\s+\[([^\]]+)\]\s+(.+)", b)
+        if not cm: continue
+        nro,img_code,code,rest = cm.groups()
+        m = re.search(brand_re + r"\s+\(?\*?\)?\s*([\d\.,]+)\s*(m|mt|mts|Unidad|unidad|un|u)?\s+([\d\.,]+)\s+IVA\s*21%\s+([\d\.,]+)", rest, re.I)
+        if not m: continue
+        brand=m.group(1).upper()
+        qty=parse_num(m.group(2)) or 1
+        unit_raw=clean(m.group(3)) or "u"
+        unit="m" if unit_raw.lower().startswith("m") else "u"
+        unit_price=parse_num(m.group(4)) or 0
+        subtotal=parse_num(m.group(5)) or qty*unit_price
+        desc = re.split(r"\b"+re.escape(brand)+r"\b", rest, flags=re.I)[0]
+        desc = clean(desc).replace("()","").strip()
+        form=detect_formation(desc)
+        notas = "Confirmar stock" if "(*)" in b else ""
+        items.append(mk_item(filename,"Ingeniería Boggio",quote,nro,code,img_code,brand,desc,form,unit,qty,unit_price,subtotal,21,"boggio_v3",notas,"No informado",entrega,"A confirmar"))
+    return items
 
-def standardize(df, filename, sheet, text):
-    proveedor = Path(filename).stem.replace("_", " ").replace("-", " ")
-    col_codigo = detect_col(df, ["codigo", "código", "cod", "sku", "referencia"])
-    col_desc = detect_col(df, ["descripcion", "descripción", "detalle", "producto", "material", "concepto", "texto"])
-    col_cant = detect_col(df, ["cantidad", "cant", "qty"])
-    col_moneda = detect_col(df, ["moneda"])
-    col_unit = detect_col(df, ["precio unitario", "p.unit", "p unit", "unitario", "precio"])
-    col_subtotal = detect_col(df, ["subtotal", "sin iva", "neto", "importe"])
-    col_iva = detect_col(df, ["iva"])
-    col_total = detect_col(df, ["total", "con iva"])
-    rows = []
-    iva_default = 10.5 if ("10,5" in text or "10.5" in text) else 21
-    for _, r in df.iterrows():
-        codigo = clean(r.get(col_codigo)) if col_codigo else ""
-        desc = clean(r.get(col_desc)) if col_desc else ""
-        if not desc and not codigo:
-            parts = [clean(v) for v in r.tolist() if clean(v) and parse_number(v) is None]
-            desc = " ".join(parts[:4])
-        if not desc and not codigo:
-            continue
-        cant = parse_number(r.get(col_cant)) if col_cant else None
-        cant = cant if cant and cant > 0 else 1
-        mon = currency(r.get(col_moneda)) if col_moneda else "SIN DEFINIR"
-        unit = parse_number(r.get(col_unit)) if col_unit else None
-        subtotal = parse_number(r.get(col_subtotal)) if col_subtotal else None
-        iva = parse_number(r.get(col_iva)) if col_iva else iva_default
-        total = parse_number(r.get(col_total)) if col_total else None
-        if iva is None:
-            iva = iva_default
-        if unit is None and subtotal is not None and cant:
-            unit = subtotal / cant
-        if unit is None and total is not None and cant:
-            unit = (total / (1 + iva / 100)) / cant
-        if unit is None:
-            nums = [parse_number(v) for v in r.tolist()]
-            nums = [x for x in nums if x is not None and x > 0]
-            if nums:
-                unit = nums[-1]
-        if unit is None:
-            continue
-        subtotal_calc = cant * unit
-        iva_monto = subtotal_calc * iva / 100
-        total_calc = subtotal_calc + iva_monto
-        if total is not None and total > 0:
-            total_calc = total
-            subtotal_calc = total_calc / (1 + iva / 100)
-            iva_monto = total_calc - subtotal_calc
-            unit = subtotal_calc / cant
-        rows.append({
-            "archivo": filename, "tabla": sheet, "proveedor": proveedor, "codigo": codigo,
-            "descripcion": desc or codigo, "grupo_comparable": codigo, "moneda": mon,
-            "cantidad": cant, "precio_unitario": unit, "subtotal_sin_iva": subtotal_calc,
-            "iva_pct": iva, "iva_monto": iva_monto, "total_con_iva": total_calc,
-            "estado": "ok" if codigo else "sin_grupo"
-        })
-    return rows
+def parse_marlew(filename, pages):
+    text="\n".join(pages)
+    quote=detect_quote(filename,text)
+    lines=[clean(x) for x in text.splitlines() if clean(x)]
+    blocks, cur=[],[]
+    start=re.compile(r"^(\d{2,5})\s+MT\s+Formaci[oó]n:", re.I)
+    ignore=["presupuesto:", "vendedor:", "telefono:", "e-mail:", "empresa:", "atte.:",
+        "proyecto:", "pais:", "prov:", "caso n", "fecha:", "condiciones comerciales",
+        "moneda y precio", "plazo de entrega", "forma y plazo de pago", "tolerancias",
+        "validez", "terminos y condiciones", "notas importantes", "pag1", "pag2", "pag3", "pag4"]
+    for line in lines:
+        low=norm(line)
+        if any(x in low for x in ignore): continue
+        if start.match(line):
+            if cur: blocks.append(" ".join(cur))
+            cur=[line]
+        elif cur:
+            cur.append(line)
+    if cur: blocks.append(" ".join(cur))
 
-def compare(items):
-    df = pd.DataFrame(items)
-    if df.empty:
-        return [], "No se detectaron ítems."
-    df["grupo_comparable"] = df["grupo_comparable"].fillna("").astype(str).str.strip()
-    df = df[df["grupo_comparable"] != ""]
-    comps = []
-    summaries = []
-    for group, g in df.groupby("grupo_comparable"):
-        if g["proveedor"].astype(str).str.lower().nunique() < 2:
-            continue
-        g = g.sort_values("precio_unitario")
-        best = g.iloc[0]
-        offers = []
-        for _, r in g.iterrows():
-            d = r.to_dict()
-            d["dif_unit_vs_mejor"] = float(r["precio_unitario"] - best["precio_unitario"])
-            d["dif_total_vs_mejor"] = float(r["total_con_iva"] - best["total_con_iva"])
-            d["recomendado_precio"] = bool(r["precio_unitario"] == best["precio_unitario"])
+    items=[]
+    for idx,b in enumerate(blocks,1):
+        qm=re.search(r"^(\d{2,5})\s+MT\s+Formaci[oó]n:", b, re.I)
+        if not qm: continue
+        qty=parse_num(qm.group(1)) or 1
+        fm=re.search(r"Formaci[oó]n:\s*([0-9]+x[0-9\.,]+(?:\+B[0-9]+)?\s*(?:mm2|mm²)?)", b, re.I)
+        form=format_group(fm.group(1)) if fm else ""
+        code=""
+        cm=re.search(r"C[oó]digo:\s*([A-Za-z0-9\s\.\-+xX]+?)\s+Mat\s*N", b, re.I)
+        if cm: code=clean(cm.group(1))
+        mat=""
+        mm=re.search(r"Mat\s*N[º°]?\s*:\s*([0-9]+)", b, re.I)
+        if mm: mat=mm.group(1)
+        family=""
+        fam=re.search(r"(Automatizar|Potenciar|Variforce|Instalar)\s*\|", b, re.I)
+        if fam: family=fam.group(1)
+        nums=re.findall(r"(?<![A-Za-z])(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})(?![A-Za-z])", b)
+        if len(nums)<2: continue
+        unit_price=parse_num(nums[-3] if len(nums)>=3 else nums[-2]) or 0
+        subtotal=parse_num(nums[-1]) or qty*unit_price
+        desc = code or f"{family} {form}".strip()
+        if family and family.lower() not in desc.lower(): desc=f"{family} {desc}"
+        low=norm(b)
+        entrega="6/8 semanas" if "6/8 semanas" in low else "A confirmar"
+        min_compra=""
+        venta=""
+        if "minimo de provision" in low: min_compra=f"Mín. {int(qty)} m"
+        if "unica bobina" in low or "no fraccionable" in low:
+            min_compra=f"Bobina única {int(qty)} m"
+            venta="No fraccionable"
+        notas=[]
+        if "material en stock" in low: notas.append("En stock salvo venta")
+        if "unica bobina" in low: notas.append("Única bobina")
+        if "no fraccionable" in low: notas.append("No fraccionable")
+        items.append(mk_item(filename,"Marlew",quote,idx,code,mat,"MARLEW",desc,form,"m",qty,unit_price,subtotal,21,"marlew_v3","; ".join(notas),min_compra,entrega,venta or "A confirmar"))
+    return items
+
+def parse_ateco(filename, pages):
+    text="\n".join(pages)
+    quote=detect_quote(filename,text)
+    items=[]
+    lines=[clean(x) for x in text.splitlines() if clean(x)]
+    entrega="5 días" if "Plazo de entrega: 5 dias" in text else "Consultar"
+    for line in lines:
+        # Código Cantidad Descripción Partida Pr.Unitario Importe
+        m=re.match(r"^([0-9]{4}-[0-9]-[0-9]{6}-[0-9])\s+(\d+)\s+(.+?)\s+sa\s+([\d\.,]+)\s+([\d\.,]+)$", line, re.I)
+        if not m: continue
+        code, qty_raw, desc, unit_raw, subtotal_raw = m.groups()
+        qty=parse_num(qty_raw) or 1
+        unit_price=parse_num(unit_raw) or 0
+        subtotal=parse_num(subtotal_raw) or qty*unit_price
+        form=detect_formation(desc)
+        items.append(mk_item(filename,"Ateco",quote,len(items)+1,code,"","ATECO",desc,form,"m",qty,unit_price,subtotal,21,"ateco_v3","Contado anticipo","No informado",entrega,"A confirmar"))
+    return items
+
+def compare_confirmed(items):
+    if not items: return [], "No hay ítems confirmados."
+    df=pd.DataFrame(items)
+    if df.empty: return [], "No hay ítems confirmados."
+    df["grupo_comparable"]=df["grupo_comparable"].fillna("").astype(str).str.strip()
+    df=df[df["grupo_comparable"]!=""]
+    comps=[]
+    summary=[]
+    for group,g in df.groupby("grupo_comparable"):
+        if g["proveedor"].astype(str).str.lower().nunique()<2: continue
+        g=g.sort_values("precio_unitario")
+        best=g.iloc[0]
+        offers=[]
+        for _,r in g.iterrows():
+            d=r.to_dict()
+            d["dif_unit_vs_mejor"]=float(r["precio_unitario"]-best["precio_unitario"])
+            d["dif_total_vs_mejor"]=float(r["total_con_iva"]-best["total_con_iva"])
+            d["recomendado_precio"]=bool(float(r["precio_unitario"])==float(best["precio_unitario"]))
             offers.append(d)
-        comps.append({"grupo_comparable": group, "mejor_proveedor": best["proveedor"], "ofertas": offers})
-        summaries.append(f"{group}: mejor precio unitario {best['proveedor']} - {best['moneda']} {best['precio_unitario']:.2f}. Total c/IVA {best['moneda']} {best['total_con_iva']:.2f}.")
-    if not comps:
-        return [], "Se detectaron ítems, pero no hay códigos/grupos repetidos entre proveedores. No se compara para evitar mezclar materiales distintos."
-    return comps, "\n".join(summaries)
+        comps.append({"grupo_comparable":group,"mejor_proveedor":best["proveedor"],"moneda":best["moneda"],"mejor_precio_unitario":float(best["precio_unitario"]),"mejor_total_con_iva":float(best["total_con_iva"]),"ofertas":offers})
+        summary.append(f"{group}: mejor precio unitario {best['proveedor']} - {best['moneda']} {best['precio_unitario']:.2f}. Validar mínimos, plazos y equivalencia técnica antes de OC.")
+    return comps, "\n".join(summary) if summary else "No hay grupos comparables con 2 o más proveedores."
 
 @app.post("/api/analyze")
 async def analyze(files: List[UploadFile] = File(...)):
-    all_items, raw_tables = [], []
+    all_items=[]
+    raw_tables=[]
     for f in files:
-        data = await f.read()
-        name = f.filename or "archivo"
-        if name.lower().endswith((".xlsx", ".xls")):
-            tables = read_excel(data)
-        elif name.lower().endswith(".pdf"):
-            tables = read_pdf(data)
-        elif name.lower().endswith((".csv", ".txt")):
-            tables = read_csv(data)
-        else:
-            tables = []
-        for sheet, df, text in tables:
-            raw_tables.append({"archivo": name, "tabla": sheet, "columns": [str(c) for c in df.columns], "rows": df.fillna("").astype(str).head(200).values.tolist()})
-            all_items.extend(standardize(df, name, sheet, text))
-    comps, summary = compare(all_items)
-    return {"items": all_items, "comparisons": comps, "summary": summary, "raw_tables": raw_tables}
+        data=await f.read()
+        filename=f.filename or "archivo"
+        if filename.lower().endswith(".pdf"):
+            try:
+                pages=read_pdf_pages(data)
+                text="\n".join(pages)
+                provider=detect_provider(filename,text)
+                if provider=="Ingeniería Boggio": items=parse_boggio(filename,pages)
+                elif provider=="Marlew": items=parse_marlew(filename,pages)
+                elif provider=="Ateco": items=parse_ateco(filename,pages)
+                else: items=[]
+                all_items.extend(items)
+                raw_tables.append({"archivo":filename,"tabla":f"Texto PDF - {provider}","columns":["Texto"],"rows":[[line] for line in text.splitlines()[:500]]})
+            except Exception as e:
+                raw_tables.append({"archivo":filename,"tabla":"ERROR","columns":["Error"],"rows":[[str(e)]]})
+    return {"items":all_items,"raw_tables":raw_tables,"warnings":["V3: revise y confirme los ítems antes de comparar.","Los grupos comparables pueden editarse en pantalla.","Se recomienda validar equivalencia técnica antes de emitir OC."]}
+
+@app.post("/api/compare")
+async def compare(payload: dict):
+    items=payload.get("items",[])
+    comps,summary=compare_confirmed(items)
+    return {"comparisons":comps,"summary":summary}
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status":"ok","version":"v3-validacion"}
