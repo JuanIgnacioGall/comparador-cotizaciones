@@ -1,35 +1,386 @@
-
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Comparador Web de Cotizaciones</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FRIO RAF — Comparador Inteligente de Cotizaciones</title>
 <style>
-body{margin:0;background:#eef2f7;font-family:Arial;color:#0f172a}.wrap{max-width:1500px;margin:auto;padding:24px}.card{background:white;border:1px solid #dbe3ee;border-radius:22px;padding:22px;margin-bottom:18px;box-shadow:0 8px 24px rgba(15,23,42,.08)}h1{margin:0;font-size:34px}p{color:#64748b}.badge{display:inline-block;padding:7px 11px;border-radius:999px;font-weight:700;font-size:12px}.ok{background:#dcfce7;color:#166534}.warn{background:#fef9c3;color:#854d0e}.bad{background:#fee2e2;color:#991b1b}.info{background:#dbeafe;color:#1e40af}input[type=file]{display:none}button,label.btn{background:#111827;color:#fff;border:0;padding:12px 16px;border-radius:14px;font-weight:800;cursor:pointer;display:inline-block}.drop{border:2px dashed #cbd5e1;background:#f8fafc;border-radius:22px;padding:30px;text-align:center}table{width:100%;border-collapse:collapse;background:#fff}th{background:#e9eef5;color:#334155;text-align:left;font-size:11px;text-transform:uppercase;padding:9px}td{border-top:1px solid #dbe3ee;padding:8px;font-size:12px;vertical-align:top}tr.best{background:#f0fdf4}.tabs{display:flex;gap:8px;flex-wrap:wrap}.tab{padding:10px 14px;background:#e2e8f0;border-radius:14px;font-weight:800;cursor:pointer}.tab.active{background:#111827;color:#fff}.hidden{display:none}.summary{white-space:pre-wrap;background:#f8fafc;border:1px solid #dbe3ee;border-radius:18px;padding:18px;line-height:1.55}.warning{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:16px;padding:14px}.quoteBox{border:1px solid #dbe3ee;border-radius:18px;margin:14px 0;overflow:hidden}.quoteHead{background:#f8fafc;padding:12px;border-bottom:1px solid #dbe3ee;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.quoteBody{overflow:auto}.file{display:flex;justify-content:space-between;border:1px solid #dbe3ee;border-radius:12px;padding:10px;background:#fff;margin-top:8px}
+:root{
+  --bg:#f4f5f2;
+  --panel:#ffffff;
+  --text:#151515;
+  --muted:#737373;
+  --line:#deded8;
+  --black:#111111;
+  --green:#9bc75b;
+  --green2:#dff1c7;
+  --red:#ef4444;
+  --yellow:#f7d35c;
+  --blue:#2f5f8f;
+  --shadow:0 16px 40px rgba(0,0,0,.08);
+  --radius:22px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Inter,Arial,Helvetica,sans-serif;color:var(--text)}
+.app{display:grid;grid-template-columns:58px 1fr;min-height:100vh}
+.sidebar{background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:14px;gap:18px}
+.logo{width:34px;height:34px;border-radius:8px;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px}
+.side-line{width:3px;height:44px;background:var(--green);border-radius:10px;margin-top:20px}
+.main{min-width:0}
+.nav{height:58px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:28px;padding:0 34px;font-size:14px;color:#777;position:sticky;top:0;z-index:5}
+.nav span{cursor:pointer}
+.nav .active{background:#111;color:#fff;border-radius:22px;padding:8px 16px;font-weight:700}
+.container{padding:42px 52px 70px}
+.kicker{font-size:12px;color:#aaa;font-weight:800;letter-spacing:.22em;text-transform:uppercase}
+.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:34px;align-items:start}
+h1{font-family:Georgia,serif;font-size:64px;line-height:.92;margin:16px 0 22px;letter-spacing:-2px}
+h1 .accent{color:var(--green)}
+.lead{font-size:18px;line-height:1.65;color:#6a6a6a;border-left:4px solid var(--green);padding-left:24px;max-width:980px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.upload-card{padding:28px}
+.upload-zone{border:2px dashed #cfcfc8;border-radius:20px;background:#fafaf7;padding:32px;text-align:center;transition:.2s}
+.upload-zone:hover{border-color:var(--green);background:#fff}
+.upload-zone h3{margin:10px 0 6px;font-size:22px}
+.upload-zone p{margin:0;color:var(--muted)}
+input[type=file]{display:none}
+.btn{border:0;border-radius:16px;padding:13px 18px;font-weight:800;cursor:pointer;background:#111;color:white;display:inline-flex;align-items:center;gap:8px;margin-top:18px}
+.btn.secondary{background:#e8e8e2;color:#111}
+.btn.green{background:var(--green);color:#111}
+.files{display:grid;gap:8px;margin-top:18px}
+.file{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);background:#fff;border-radius:14px;padding:11px 13px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.ok{background:var(--green2);color:#3b6b09}.warn{background:#fff1bd;color:#8a6100}.bad{background:#ffe1e1;color:#b91c1c}.info{background:#e4edf7;color:#164b7b}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:30px 0}
+.metric{padding:22px;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow)}
+.metric small{color:#999;text-transform:uppercase;font-size:11px;font-weight:900;letter-spacing:.15em}
+.metric strong{display:block;font-size:34px;margin-top:8px}
+.sections{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:26px}
+.panel{padding:24px}
+.panel h2{margin:0 0 18px;font-size:24px}
+.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 22px}
+.tab{padding:10px 16px;border-radius:999px;background:#e9e9e3;color:#555;font-weight:800;cursor:pointer}
+.tab.active{background:#111;color:#fff}
+.table-wrap{overflow:auto;max-height:620px;border-radius:18px;border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;background:#fff}
+th{position:sticky;top:0;background:#173e61;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.05em;text-align:left;padding:12px;z-index:2}
+td{border-top:1px solid #e6e6df;padding:11px;font-size:12px;vertical-align:top}
+tr.best{background:#f0f9e7}
+tr:hover td{background:#fafafa}
+.quoteBox{border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:16px;background:#fff}
+.quoteHead{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;background:#fafaf7;border-bottom:1px solid var(--line)}
+.summary{white-space:pre-wrap;line-height:1.65;color:#333;background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px}
+.hidden{display:none}
+.accordion{display:grid;gap:12px}
+.acc-item{border:1px solid var(--line);border-radius:18px;background:#fff;overflow:hidden;box-shadow:0 8px 22px rgba(0,0,0,.05)}
+.acc-head{padding:17px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:800}
+.acc-body{display:none;padding:0 18px 18px;color:#666;line-height:1.55}
+.acc-item.open .acc-body{display:block}
+.demo-pill{display:inline-flex;align-items:center;gap:8px;background:#111;color:#fff;padding:10px 14px;border-radius:12px;font-weight:800;margin-top:10px}
+.status{margin-top:14px;color:#666;font-size:14px}
+.footer-note{margin-top:28px;background:#fff4f4;border-left:4px solid var(--red);padding:18px 22px;border-radius:12px;color:#444}
+.loader{display:none;margin-top:15px;color:#444}
+.loader.show{display:block}
+.spinner{width:18px;height:18px;border:3px solid #ddd;border-top-color:#111;border-radius:50%;display:inline-block;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:1100px){
+  .hero,.sections{grid-template-columns:1fr}
+  h1{font-size:46px}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:700px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .nav{overflow:auto;padding:0 14px}
+  .container{padding:24px 16px}
+  .metrics{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-<div class="card"><h1>Comparador Web de Cotizaciones</h1><p>Subí cotizaciones y obtené detalle + comparativa automática por código/grupo comparable.</p><span class="badge ok">App web real</span></div>
-<div class="card warning"><b>Modo seguro:</b> no compara por parecido; solo cuando hay mismo código/grupo. Así evita mezclar caños con cables.</div>
-<div class="card"><h2>Subir cotizaciones</h2><div class="drop"><div style="font-size:44px">📄</div><p>PDF con texto, Excel, CSV o TXT.</p><label class="btn">Seleccionar archivos<input id="files" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.txt"></label> <button onclick="analyze()">Analizar y comparar</button><div id="fileList"></div></div></div>
-<div class="card"><div class="tabs"><div class="tab active" onclick="showTab('items',this)">Ítems detectados</div><div class="tab" onclick="showTab('comparisons',this)">Comparaciones</div><div class="tab" onclick="showTab('summary',this)">Resumen</div><div class="tab" onclick="showTab('raw',this)">Tablas leídas</div></div></div>
-<div id="items" class="card"><h2>Ítems detectados</h2><div id="itemsArea">Todavía no se analizaron archivos.</div></div>
-<div id="comparisons" class="card hidden"><h2>Comparaciones</h2><div id="comparisonsArea">Todavía no hay comparación.</div></div>
-<div id="summary" class="card hidden"><h2>Resumen ejecutivo</h2><div id="summaryArea" class="summary">Todavía no hay resumen.</div></div>
-<div id="raw" class="card hidden"><h2>Tablas crudas leídas</h2><div id="rawArea">Todavía no hay tablas.</div></div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">FR</div>
+    <div class="side-line"></div>
+  </aside>
+
+  <main class="main">
+    <nav class="nav">
+      <span onclick="scrollToId('inicio')">Portada</span>
+      <span onclick="scrollToId('cargar')">Cargar</span>
+      <span onclick="scrollToId('resultados')">Resultados</span>
+      <span onclick="scrollToId('comparaciones')">Comparaciones</span>
+      <span class="active" onclick="scrollToId('demo')">¿Qué puede hacer?</span>
+    </nav>
+
+    <div class="container" id="inicio">
+      <div class="hero">
+        <section>
+          <div class="kicker">Compras industriales + IA</div>
+          <h1>Comparador<br/>inteligente de <span class="accent">cotizaciones</span></h1>
+          <p class="lead">
+            Subí PDFs de proveedores, la plataforma lee los ítems, separa materiales, compara precios unitarios,
+            subtotales, IVA, cantidades reales, mínimos de compra y riesgos de entrega para ayudar a tomar mejores decisiones.
+          </p>
+        </section>
+
+        <section class="card upload-card" id="cargar">
+          <div class="upload-zone">
+            <div style="font-size:46px">📄</div>
+            <h3>Subir cotizaciones</h3>
+            <p>PDF de Boggio, Marlew, Ateco u otros proveedores.</p>
+            <label class="btn">
+              Seleccionar archivos
+              <input id="files" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.txt"/>
+            </label>
+            <button class="btn green" onclick="analyze()">Analizar y comparar</button>
+            <div class="loader" id="loader"><span class="spinner"></span>Analizando documentos, tablas e ítems...</div>
+            <div class="files" id="fileList"></div>
+            <div class="status" id="status">Esperando archivos.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><small>Ítems detectados</small><strong id="mItems">0</strong></div>
+        <div class="metric"><small>Comparaciones</small><strong id="mComps">0</strong></div>
+        <div class="metric"><small>Proveedores</small><strong id="mProv">0</strong></div>
+        <div class="metric"><small>Sin grupo</small><strong id="mNoGroup">0</strong></div>
+      </div>
+
+      <section class="sections" id="demo">
+        <div class="card panel">
+          <div class="kicker">Capacidades principales</div>
+          <h2>Qué hace en compras</h2>
+          <div class="table-wrap" style="max-height:none">
+            <table>
+              <thead><tr><th>Función</th><th>Aplicación concreta</th></tr></thead>
+              <tbody>
+                <tr><td><b>Leer documentos</b></td><td>PDFs, cotizaciones, presupuestos y planillas.</td></tr>
+                <tr><td><b>Separar ítems</b></td><td>Evita mezclar encabezados, CUIT, notas y condiciones comerciales.</td></tr>
+                <tr><td><b>Comparar precios</b></td><td>Precio unitario, subtotal, IVA, total y diferencias.</td></tr>
+                <tr><td><b>Detectar riesgos</b></td><td>Mínimos, bobinas, plazos largos y diferencias técnicas.</td></tr>
+                <tr><td><b>Asistir decisiones</b></td><td>Recomienda compra total o mixta según costo y riesgo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="footer-note">
+            <b>No reemplaza el criterio técnico:</b> la recomendación debe validarse antes de emitir OC.
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="kicker">Ejemplos de uso</div>
+          <h2>Demos internas</h2>
+          <div class="accordion">
+            <div class="acc-item open">
+              <div class="acc-head" onclick="toggleAcc(this)">📊 Comparador de cotizaciones <span>⌄</span></div>
+              <div class="acc-body">
+                Carga de PDFs, lectura automática, agrupación por formación técnica y reporte para gerencia.
+                <br><span class="demo-pill">▶ Demo activa</span>
+              </div>
+            </div>
+            <div class="acc-item">
+              <div class="acc-head" onclick="toggleAcc(this)">📁 Gestión documental <span>⌄</span></div>
+              <div class="acc-body">Base de cotizaciones, historial por proveedor y búsqueda rápida de materiales.</div>
+            </div>
+            <div class="acc-item">
+              <div class="acc-head" onclick="toggleAcc(this)">⚠️ Alertas de compras <span>⌄</span></div>
+              <div class="acc-body">Detecta sobreprecios, faltantes, plazos críticos y materiales no equivalentes.</div>
+            </div>
+            <div class="acc-item">
+              <div class="acc-head" onclick="toggleAcc(this)">📈 Reportes automáticos <span>⌄</span></div>
+              <div class="acc-body">Genera resumen ejecutivo para gerencia con ahorro potencial y riesgos.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel" id="resultados" style="margin-top:28px">
+        <div class="kicker">Resultados</div>
+        <h2>Ítems detectados</h2>
+        <div class="tabs">
+          <div class="tab active" onclick="showTab('itemsArea', this)">Ítems</div>
+          <div class="tab" onclick="showTab('comparisonsArea', this)">Comparaciones</div>
+          <div class="tab" onclick="showTab('summaryArea', this)">Resumen</div>
+          <div class="tab" onclick="showTab('rawArea', this)">Texto leído</div>
+        </div>
+
+        <div id="itemsArea">Todavía no se analizaron archivos.</div>
+        <div id="comparisonsArea" class="hidden">Todavía no hay comparaciones.</div>
+        <div id="summaryArea" class="hidden summary">Todavía no hay resumen.</div>
+        <div id="rawArea" class="hidden">Todavía no hay texto leído.</div>
+      </section>
+    </div>
+  </main>
 </div>
+
 <script>
-let selectedFiles=[]; const API_URL="https://comparador-cotizaciones.onrender.com/api/analyze";
-document.getElementById("files").addEventListener("change",e=>{selectedFiles=Array.from(e.target.files||[]);document.getElementById("fileList").innerHTML=selectedFiles.map(f=>`<div class="file"><b>${esc(f.name)}</b><span class="badge info">${(f.size/1024).toFixed(1)} KB</span></div>`).join("")});
-function showTab(id,el){["items","comparisons","summary","raw"].forEach(x=>document.getElementById(x).classList.add("hidden"));document.getElementById(id).classList.remove("hidden");document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));el.classList.add("active")}
-async function analyze(){if(!selectedFiles.length){alert("Seleccioná archivos");return}const fd=new FormData();selectedFiles.forEach(f=>fd.append("files",f));document.getElementById("itemsArea").innerHTML="Analizando...";try{const res=await fetch(API_URL,{method:"POST",body:fd});const data=await res.json();if(!res.ok)throw new Error(data.error||"Error");render(data)}catch(e){document.getElementById("itemsArea").innerHTML=`<span class="badge bad">Error</span> ${esc(e.message)}`}}
-function render(d){renderItems(d.items||[]);renderComparisons(d.comparisons||[]);document.getElementById("summaryArea").textContent=d.summary||"";renderRaw(d.raw_tables||[])}
-function renderItems(items){if(!items.length){itemsArea.innerHTML="No se detectaron ítems";return}itemsArea.innerHTML=`<div style="overflow:auto"><table><thead><tr><th>Archivo</th><th>Proveedor</th><th>Código</th><th>Descripción</th><th>Grupo</th><th>Moneda</th><th>Cant.</th><th>P. unit.</th><th>Subtotal s/IVA</th><th>IVA</th><th>Total c/IVA</th><th>Estado</th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.archivo)}</td><td>${esc(i.proveedor)}</td><td>${esc(i.codigo)}</td><td><b>${esc(i.descripcion)}</b></td><td>${esc(i.grupo_comparable||"")}</td><td>${i.moneda}</td><td>${num(i.cantidad)}</td><td>${num(i.precio_unitario)}</td><td>${num(i.subtotal_sin_iva)}</td><td>${num(i.iva_pct)}% = ${num(i.iva_monto)}</td><td><b>${num(i.total_con_iva)}</b></td><td>${i.estado==="ok"?'<span class="badge ok">Con grupo</span>':'<span class="badge warn">Sin grupo</span>'}</td></tr>`).join("")}</tbody></table></div>`}
-function renderComparisons(comps){if(!comps.length){comparisonsArea.innerHTML=`<div class="warning">No hay códigos/grupos repetidos entre proveedores. La app no compara para evitar errores.</div>`;return}comparisonsArea.innerHTML=comps.map(c=>`<div class="quoteBox"><div class="quoteHead"><b>Grupo: ${esc(c.grupo_comparable)}</b><span class="badge ok">Mejor: ${esc(c.mejor_proveedor)}</span></div><div class="quoteBody"><table><thead><tr><th>Proveedor</th><th>Descripción</th><th>Moneda</th><th>Cant.</th><th>P. unit.</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Dif. unit.</th><th>Dif. total</th><th>Estado</th></tr></thead><tbody>${c.ofertas.map(o=>`<tr class="${o.recomendado_precio?'best':''}"><td>${esc(o.proveedor)}</td><td>${esc(o.descripcion)}</td><td>${o.moneda}</td><td>${num(o.cantidad)}</td><td>${num(o.precio_unitario)}</td><td>${num(o.subtotal_sin_iva)}</td><td>${num(o.iva_pct)}% = ${num(o.iva_monto)}</td><td><b>${num(o.total_con_iva)}</b></td><td>${num(o.dif_unit_vs_mejor)}</td><td>${num(o.dif_total_vs_mejor)}</td><td>${o.recomendado_precio?'<span class="badge ok">Menor precio</span>':'<span class="badge warn">Alternativa</span>'}</td></tr>`).join("")}</tbody></table></div></div>`).join("")}
-function renderRaw(tables){if(!tables.length){rawArea.innerHTML="No hay tablas";return}rawArea.innerHTML=tables.map(t=>`<div class="quoteBox"><div class="quoteHead"><b>${esc(t.archivo)} / ${esc(t.tabla)}</b></div><div class="quoteBody"><table><thead><tr>${t.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${t.rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`).join("")}
-function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
-function num(x){return Number(x||0).toLocaleString("es-AR",{maximumFractionDigits:2})}
+let selectedFiles = [];
+const API_URL = "https://comparador-cotizaciones.onrender.com/api/analyze";
+
+document.getElementById("files").addEventListener("change", e => {
+  selectedFiles = Array.from(e.target.files || []);
+  document.getElementById("fileList").innerHTML = selectedFiles.map(f => `
+    <div class="file">
+      <b>${esc(f.name)}</b>
+      <span class="badge info">${(f.size/1024).toFixed(1)} KB</span>
+    </div>`).join("");
+  document.getElementById("status").textContent = `${selectedFiles.length} archivo(s) listo(s) para analizar.`;
+});
+
+function scrollToId(id){ document.getElementById(id)?.scrollIntoView({behavior:"smooth"}); }
+
+function toggleAcc(el){
+  const item = el.parentElement;
+  document.querySelectorAll(".acc-item").forEach(x => { if(x !== item) x.classList.remove("open"); });
+  item.classList.toggle("open");
+}
+
+function showTab(id, el){
+  ["itemsArea","comparisonsArea","summaryArea","rawArea"].forEach(x => document.getElementById(x).classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  el.classList.add("active");
+}
+
+async function analyze(){
+  if(!selectedFiles.length){
+    alert("Seleccioná al menos una cotización.");
+    return;
+  }
+  const fd = new FormData();
+  selectedFiles.forEach(f => fd.append("files", f));
+  document.getElementById("loader").classList.add("show");
+  document.getElementById("status").textContent = "Procesando cotizaciones...";
+  document.getElementById("itemsArea").innerHTML = "Analizando...";
+
+  try{
+    const res = await fetch(API_URL, {method:"POST", body: fd});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || "Error al analizar cotizaciones.");
+    render(data);
+    document.getElementById("status").innerHTML = `<span class="badge ok">Análisis completo</span>`;
+  }catch(e){
+    document.getElementById("itemsArea").innerHTML = `<span class="badge bad">Error</span> ${esc(e.message)}`;
+    document.getElementById("status").innerHTML = `<span class="badge bad">No se pudo analizar</span>`;
+  }finally{
+    document.getElementById("loader").classList.remove("show");
+  }
+}
+
+function render(d){
+  const items = d.items || [];
+  const comps = d.comparisons || [];
+  renderItems(items);
+  renderComparisons(comps);
+  document.getElementById("summaryArea").textContent = d.summary || "Sin resumen.";
+  renderRaw(d.raw_tables || []);
+  document.getElementById("mItems").textContent = items.length;
+  document.getElementById("mComps").textContent = comps.length;
+  document.getElementById("mProv").textContent = new Set(items.map(x => x.proveedor)).size;
+  document.getElementById("mNoGroup").textContent = items.filter(x => !x.grupo_comparable).length;
+}
+
+function renderItems(items){
+  if(!items.length){
+    document.getElementById("itemsArea").innerHTML = `<div class="warning">No se detectaron ítems. Revisar si el PDF es escaneado o si el formato no está soportado.</div>`;
+    return;
+  }
+  document.getElementById("itemsArea").innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Proveedor</th><th>N°</th><th>Código</th><th>Marca</th><th>Descripción</th>
+          <th>Formación</th><th>Grupo</th><th>Moneda</th><th>Cant.</th><th>Unidad</th>
+          <th>P. unit.</th><th>Subtotal s/IVA</th><th>IVA</th><th>Total c/IVA</th><th>Parser</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(i => `
+          <tr>
+            <td>${esc(i.proveedor)}</td>
+            <td>${esc(i.nro_item)}</td>
+            <td>${esc(i.codigo)}</td>
+            <td>${esc(i.marca)}</td>
+            <td><b>${esc(i.descripcion)}</b></td>
+            <td>${esc(i.formacion)}</td>
+            <td><span class="badge ${i.grupo_comparable ? "ok" : "warn"}">${esc(i.grupo_comparable || "Sin grupo")}</span></td>
+            <td>${esc(i.moneda)}</td>
+            <td>${num(i.cantidad)}</td>
+            <td>${esc(i.unidad)}</td>
+            <td>${num(i.precio_unitario)}</td>
+            <td>${num(i.subtotal_sin_iva)}</td>
+            <td>${num(i.iva_pct)}% = ${num(i.iva_monto)}</td>
+            <td><b>${num(i.total_con_iva)}</b></td>
+            <td>${esc(i.parser)}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table></div>`;
+}
+
+function renderComparisons(comps){
+  if(!comps.length){
+    document.getElementById("comparisonsArea").innerHTML = `<div class="warning">No hay coincidencias entre proveedores por grupo comparable.</div>`;
+    return;
+  }
+  document.getElementById("comparisonsArea").innerHTML = comps.map(c => `
+    <div class="quoteBox">
+      <div class="quoteHead">
+        <b>Grupo comparable: ${esc(c.grupo_comparable)}</b>
+        <span class="badge ok">Mejor: ${esc(c.mejor_proveedor)}</span>
+      </div>
+      <div class="quoteBody">
+        <table>
+          <thead>
+            <tr>
+              <th>Proveedor</th><th>Descripción</th><th>Moneda</th><th>Cant.</th>
+              <th>P. unit.</th><th>Subtotal</th><th>IVA</th><th>Total</th>
+              <th>Dif. unit.</th><th>Dif. total</th><th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${c.ofertas.map(o => `
+              <tr class="${o.recomendado_precio ? "best" : ""}">
+                <td>${esc(o.proveedor)}</td>
+                <td>${esc(o.descripcion)}</td>
+                <td>${esc(o.moneda)}</td>
+                <td>${num(o.cantidad)}</td>
+                <td>${num(o.precio_unitario)}</td>
+                <td>${num(o.subtotal_sin_iva)}</td>
+                <td>${num(o.iva_pct)}% = ${num(o.iva_monto)}</td>
+                <td><b>${num(o.total_con_iva)}</b></td>
+                <td>${num(o.dif_unit_vs_mejor)}</td>
+                <td>${num(o.dif_total_vs_mejor)}</td>
+                <td>${o.recomendado_precio ? '<span class="badge ok">Menor precio</span>' : '<span class="badge warn">Alternativa</span>'}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`).join("");
+}
+
+function renderRaw(tables){
+  if(!tables.length){
+    document.getElementById("rawArea").innerHTML = "Sin texto leído.";
+    return;
+  }
+  document.getElementById("rawArea").innerHTML = tables.map(t => `
+    <div class="quoteBox">
+      <div class="quoteHead"><b>${esc(t.archivo)} / ${esc(t.tabla)}</b></div>
+      <div class="quoteBody">
+        <table>
+          <tbody>
+            ${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`).join("");
+}
+
+function esc(s){return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function num(x){return Number(x || 0).toLocaleString("es-AR",{maximumFractionDigits:2})}
 </script>
 </body>
 </html>
+
