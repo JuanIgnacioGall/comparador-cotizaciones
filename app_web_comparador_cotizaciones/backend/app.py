@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-app = FastAPI(title="Comparador Cotizaciones V5 Industrial")
+app = FastAPI(title="Comparador Cotizaciones V5.1 Fix Comparaciones")
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,7 +62,10 @@ def detect_currency(text):
     return "USD"
 
 def detect_provider(filename, text):
+    f = filename.lower()
     l = text.lower()
+    if "p037357" in f or "marlew" in l:
+        return "Marlew"
     if "provemet" in l or "complemet" in l:
         return "Provemet / Complemet"
     if "ivanar" in l:
@@ -104,36 +107,33 @@ def detect_quote(filename, text):
             return clean(m.group(1))
     return Path(filename).stem
 
+def cable_formation(text):
+    t = clean(text)
+    m = re.search(r"(\d+)\s*[xX]\s*(\d+(?:[\.,]\d+)?)(?:\s*\+\s*B?(\d+))?", t)
+    if m:
+        a = m.group(1)
+        b = m.group(2).replace(",", ".")
+        c = m.group(3)
+        return f"{a}x{b}+B{c}" if c else f"{a}x{b}"
+    maps = {
+        "EC 0210":"2x1", "EC 0215":"2x1.5", "EC 0307":"3x0.75", "EC 0410":"4x1",
+        "NF 11500":"1x150", "OF 1210":"12x1", "NF 0215":"2x1.5", "NF 0225":"2x2.5",
+        "NF 0315":"3x1.5", "NF 0325":"3x2.5", "NF 0425":"4x2.5", "NF 0440":"4x4",
+        "OF 0715":"7x1.5", "VK 1160":"1x16", "VK 0125":"1x2.5", "BX 0325":"3x2.5+B6"
+    }
+    u = t.upper()
+    for k, v in maps.items():
+        if k in u:
+            return v
+    return ""
+
 def normalize_group(text):
     t = clean(text)
     nt = norm(t).upper()
 
-    m = re.search(r"(\d+\s*[xX]\s*\d+(?:[\.,]\d+)?(?:\s*\+\s*B?\d+)?\s*(?:mm2|MM2|mm²|MM²)?)", t)
-    if m:
-        form = re.sub(r"\s+", "", m.group(1).replace("X","x").replace(",",".").replace("MM2","mm²").replace("mm2","mm²"))
-        flags = []
-        ln = norm(t)
-        if "blind" in ln or "pantalla" in ln or "malla" in ln:
-            flags.append("BLIND")
-        if "verde" in ln and "amarillo" in ln:
-            flags.append("VA")
-        if "pvc" in ln:
-            flags.append("PVC")
-        return "_".join(["CABLE", form] + flags)
-
-    maps = {
-        "EC 0210":"CABLE_2x1mm²_BLIND","EC 0215":"CABLE_2x1.5mm²_BLIND",
-        "EC 0307":"CABLE_3x0.75mm²_BLIND","EC 0410":"CABLE_4x1mm²_BLIND",
-        "NF 11500":"CABLE_1x150mm²","OF 1210":"CABLE_12x1mm²",
-        "NF 0215":"CABLE_2x1.5mm²","NF 0225":"CABLE_2x2.5mm²",
-        "NF 0315":"CABLE_3x1.5mm²","NF 0325":"CABLE_3x2.5mm²",
-        "NF 0425":"CABLE_4x2.5mm²","NF 0440":"CABLE_4x4mm²",
-        "OF 0715":"CABLE_7x1.5mm²","VK 1160":"CABLE_1x16mm²_VA",
-        "VK 0125":"CABLE_1x2.5mm²_VA",
-    }
-    for k, v in maps.items():
-        if k in nt:
-            return v
+    cf = cable_formation(t)
+    if cf:
+        return "CABLE_" + cf
 
     if any(x in nt for x in ["TUBO","CANO","CAÑO"]):
         size = ""; sch = ""; diam = ""
@@ -256,20 +256,46 @@ def parse_boggio(filename, pages):
     return out
 
 def parse_marlew(filename, pages):
-    text = "\n".join(pages); cot = detect_quote(filename, text); lines = [clean(x) for x in text.splitlines() if clean(x)]
-    starts = [i for i,l in enumerate(lines) if re.match(r"^\d+\s+\d{2,5}\s+MT\s+C[oó]digo:", l, re.I)]
-    blocks = [" ".join(lines[s: starts[j+1] if j+1 < len(starts) else len(lines)]) for j,s in enumerate(starts)]
+    text = "\n".join(pages)
+    cot = detect_quote(filename, text)
+    lines = [clean(x) for x in text.splitlines() if clean(x)]
     out = []
-    for b in blocks:
-        m = re.search(r"^(\d+)\s+(\d{2,5})\s+MT\s+C[oó]digo:\s*(.*?)\s+Formaci[oó]n:\s*([^\s]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", b, re.I)
-        if not m: continue
-        nro, cant_raw, cod, form, punit_raw, net, total_raw = m.groups()
-        cant = parse_num(cant_raw) or 1; punit = parse_num(punit_raw) or 0; subtotal = parse_num(total_raw) or cant*punit
-        low = norm(b); entrega = "6/8 semanas" if "6/8 semanas" in low else "A confirmar"; minimo = ""; notas = []
-        if "minimo de provision" in low: minimo = f"Mín. {int(cant)} m"
-        if "unica bobina" in low or "no fraccionable" in low: minimo = f"Bobina única {int(cant)} m"; notas.append("No fraccionable")
-        if "material en stock" in low: notas.append("En stock salvo venta")
-        out.append(make_item(filename, "Marlew", cot, nro, cod, "MARLEW", f"{cod} {form}", "m", cant, punit, subtotal, "USD", 21, "; ".join(notas), minimo, entrega, "marlew_v5"))
+
+    for i, line in enumerate(lines):
+        m = re.match(r"^(?:(\d+)\s+)?(\d+x\d+(?:[\.,]\d+)?(?:\+B?\d+)?mm²?)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)$", line, re.I)
+        if not m:
+            continue
+        nro_raw, form, p1, p2, total_raw = m.groups()
+        nro = int(nro_raw) if nro_raw else len(out) + 1
+        punit = parse_num(p1) or parse_num(p2) or 0
+        subtotal = parse_num(total_raw) or 0
+        qty = 1
+        codigo = ""
+        notas = []
+        minimo = ""
+        entrega = "A confirmar"
+        for j in range(max(0, i-10), min(len(lines), i+12)):
+            lj = lines[j]
+            q = re.search(r"(\d+)\s+MT\s+Formaci[oó]n", lj, re.I)
+            if q:
+                qty = parse_num(q.group(1)) or qty
+            if re.match(r"^[A-Z]{2}\s*\d{4}", lj.strip(), re.I):
+                codigo = lj.strip()
+            if "MATERIAL EN STOCK" in lj.upper():
+                notas.append("En stock salvo venta")
+            if "MINIMO" in lj.upper():
+                minimo = f"Mín. {int(qty)} m" if qty else "Mínimo informado"
+            if "NO FRACCIONABLE" in lj.upper() or "UNICA BOBINA" in lj.upper():
+                notas.append("No fraccionable")
+                minimo = f"Bobina única {int(qty)} m" if qty else "Bobina única"
+            if "PLAZO 6/8" in lj.upper():
+                entrega = "6/8 semanas"
+        if qty == 1 and punit:
+            est = subtotal / punit
+            if 0 < est < 100000:
+                qty = round(est, 4)
+        desc = f"{codigo} {form}".strip()
+        out.append(make_item(filename, "Marlew", cot, nro, codigo, "MARLEW", desc, "m", qty, punit, subtotal, "USD", 21, "; ".join(dict.fromkeys(notas)), minimo, entrega, "marlew_v5_1"))
     return out
 
 def parse_ateco(filename, pages):
@@ -291,7 +317,7 @@ def looks_like_item(line):
     if any(b in l for b in BAD_WORDS): return False
     nums = re.findall(r"\d+(?:[\.,]\d+)?", line)
     if len(nums) < 2: return False
-    return any(w in l for w in TECH_WORDS)
+    return any(w in l for w in TECH_WORDS) or bool(cable_formation(line))
 
 def parse_universal(filename, pages):
     text = "\n".join(pages); prov = detect_provider(filename, text); cot = detect_quote(filename, text); moneda = detect_currency(text)
@@ -331,6 +357,10 @@ def auto_enrich_groups(items):
     return items
 
 def compare_items(items):
+    for it in items:
+        g = normalize_group(" ".join([it.get("codigo", ""), it.get("grupo_comparable", ""), it.get("descripcion", "")]))
+        if g:
+            it["grupo_comparable"] = g
     items = auto_enrich_groups(items)
     df = pd.DataFrame(items)
     if df.empty: return [], "No hay ítems para comparar."
@@ -417,8 +447,8 @@ async def compare(payload: dict):
 @app.post("/api/export_excel")
 async def export_excel(payload: dict):
     out = build_excel(payload.get("items", []), payload.get("comparisons", []), payload.get("summary", ""))
-    return StreamingResponse(out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=comparativa_cotizaciones_v5.xlsx"})
+    return StreamingResponse(out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=comparativa_cotizaciones_v5_1.xlsx"})
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "v5-industrial"}
+    return {"status": "ok", "version": "v5.1-fix-comparaciones"}
